@@ -1,9 +1,10 @@
+use std::task::Poll;
 use std::thread;
 use std::sync::{ Arc, Condvar, Mutex, atomic::AtomicBool, atomic::Ordering };
 use std::collections::VecDeque;
 use std::time::{ Duration, Instant };
 
-type JobFunc = dyn FnOnce() + 'static + Send;
+type JobFunc = dyn Fn() + 'static + Send + Sync;
 type Job = Arc<JobFunc>;
 
 struct PollingJob {
@@ -81,7 +82,7 @@ impl PollingWorker {
 
                     if dt > job.timeout && (job.waiting && !job.running.load(Ordering::SeqCst)) {
                         let (lock, cvar) = &*queue;
-                        lock.lock().unwrap().push_back(Message::NewJob(Box::clone(job.job)));
+                        lock.lock().unwrap().push_back(Message::NewJob(Arc::clone(&job.job)));
                         cvar.notify_one();
                     }
                 }
@@ -135,7 +136,7 @@ impl AsyncPool {
         cvar.notify_one();
     } 
 
-    pub fn attach_job(&mut self, job: &JobFunc, dur: Duration) {
+    pub fn attach_job(&mut self, job: Job, timeout: Duration) {
         let attached_result= self.polling_attached.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst);
 
         if let Ok(_) = attached_result {
@@ -144,10 +145,10 @@ impl AsyncPool {
                         Arc::clone(&self.jobs))));
         }
 
-        let jobs = self.jobs.lock().unwrap();
+        let mut jobs = self.jobs.lock().unwrap();
 
         jobs.push(PollingJob {
-            job: Arc::new(job),
+            job,
             running: AtomicBool::new(false),
             waiting: true,
             timeout,
