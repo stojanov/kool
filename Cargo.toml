@@ -1,0 +1,9 @@
+[package]
+name = "kool"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+notify-rust = "4"
+toml = "0.8"
+serde = { version = "1.0", features = ["derive"] }

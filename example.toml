@@ -1,0 +1,16 @@
+[[control]]
+name = "gpu_control"
+interval = 1000 # in milliseconds
+src_path = "usr/bin/gpu-status temp" # source of value temperature
+src_args = [ "temp" ] # only used if running a program/script
+src_type = "" # file(as in file to read from), script, program 
+dest_path = "/sys/class/hwmon4/pwm4" # destination to write pwm, usually [0, 255]
+dest_min = 0
+dest_max = 255  
+default_dest_percent = 40 # in case of crash, this will be the default percentage, if the src crashes, you will be notified and the control will stop polling
+curve = "linear" # optional, linear, bezier, cubic, custom function f(x) (too hard for now)
+points = [
+    [30, 30], # [ source temp, output to the pwm in percent]
+    [60, 60],
+    [90, 90],
+]
