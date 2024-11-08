@@ -1,4 +1,3 @@
-use std::task::Poll;
 use std::thread;
 use std::sync::{ Arc, Condvar, Mutex, atomic::AtomicBool, atomic::Ordering };
 use std::collections::VecDeque;
@@ -77,6 +76,15 @@ impl PollingWorker {
             let mut t = Instant::now();
 
             loop {
+                {
+                    let (lock, _) = &*queue;
+                    let mut queue = lock.lock().unwrap();
+
+                    if let Some(Message::Shutdown) = queue.front() {
+                        queue.pop_front();
+                        return;
+                    }
+                }
                 for job in jobs.lock().unwrap().iter() {
                     let dt = Instant::now() - job.last_t;
 
