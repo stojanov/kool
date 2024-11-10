@@ -1,43 +1,47 @@
+use event::Event;
 use serde::{ Serialize, Deserialize };
-use std::{fs, io::Write};
+use std::{fs, io::Write, thread::sleep, time::Duration};
 
-mod control;
 mod async_pool;
+mod signal;
+mod event;
+mod control;
+
+use control::control::Config;
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Config {
-    control: Vec<control::Config>,
+struct FileConfig {
+    control: Vec<Config>
 }
 
 fn main() {
     let tomls = fs::read_to_string("example.toml").expect("Cannot read from file");
 
-    let parsed: Config = toml::from_str(&tomls).expect("Cannot parse");
+    let parsed: FileConfig = toml::from_str(&tomls).expect("Cannot parse");
 
     println!("{:#?}", parsed);
 
-
-    let mut pwm = fs::OpenOptions::new()
-        .write(true)
-        .open("/sys/class/hwmon/hwmon4/pwm4")
-        .unwrap();
-
-    use std::io;
-
     let mut input = String::new();
 
-    loop {
-        match io::stdin().read_line(&mut input) {
-            Ok(_) => {
-                input = input.replace("\n", "");
-
-                println!("input to write {input}");
-                pwm.write_all(input.as_bytes()).expect("Cannot write to file");
-                pwm.flush();
-
-                input.clear();
-            }
-            Err(error) => println!("error: {error}"),
+    let mut p = async_pool::AsyncPool::new(10, Duration::from_millis(1));
+    
+    p.connect_listener(|e| {
+        match e.as_ref() {
+            Event::Log(str) => { println!("{}", str)}
+            Event::Warn(str) => { println!("{}", str)}
+            Event::Error(str) => { println!("{}", str)}
         }
+    });
+
+    p.attach_job(Duration::from_millis(500), || {
+        println!("From thread");
+    });
+
+    p.attach_job(Duration::from_millis(100), || {
+        println!("From thread but faster");
+    });
+
+    loop {
+        sleep(Duration::from_secs(1));
     }
 }

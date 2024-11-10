@@ -1,6 +1,8 @@
 use serde::{ Serialize, Deserialize };
 use std::fs;
 
+use super::source;
+
 #[derive(Debug, Serialize, Deserialize, Hash, Eq, PartialEq)]
 pub struct Config {
     name: String,
@@ -16,18 +18,14 @@ pub struct Config {
     points: Vec<Vec<i64>>,
 }
 
-trait Source {
-    fn get(self: Box<Self>) -> i64;
-}
-
 pub struct Control {
     config: Config,
-    source: Box<dyn Source>,
+    source: Box<dyn source::Source>,
     // for now we only support files
     dest: fs::File,
 }
 
 impl Control {
-    fn new(conf: Config) -> Self {
+    fn new(conf: Config) {
     }
 }
