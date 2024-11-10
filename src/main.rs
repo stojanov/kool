@@ -1,5 +1,9 @@
 use event::Event;
 use serde::{ Serialize, Deserialize };
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use std::{fs, io::Write, thread::sleep, time::Duration};
 
 mod async_pool;
@@ -23,9 +27,9 @@ fn main() {
 
     let mut input = String::new();
 
-    let mut p = async_pool::AsyncPool::new(10, Duration::from_millis(1));
+    let mut async_pool= async_pool::AsyncPool::new(10, Duration::from_millis(1));
     
-    p.connect_listener(|e| {
+    async_pool.connect_listener(|e| {
         match e.as_ref() {
             Event::Log(str) => { println!("{}", str)}
             Event::Warn(str) => { println!("{}", str)}
@@ -33,13 +37,8 @@ fn main() {
         }
     });
 
-    p.attach_job(Duration::from_millis(500), || {
-        println!("From thread");
-    });
+    let async_pool = Rc::new(RefCell::new(async_pool));
 
-    p.attach_job(Duration::from_millis(100), || {
-        println!("From thread but faster");
-    });
 
     loop {
         sleep(Duration::from_secs(1));

@@ -1,44 +1,83 @@
-use std::{error::Error, fs};
-
+use std::{error::Error, fs::{self, OpenOptions}, io::{Read}, process::Command, thread::sleep, time::Duration};
 
 pub trait Source {
-    fn get(&mut self) -> Result<i64, Box<dyn Error>>;
+    fn get(&mut self, timeout: Duration) -> Option<i64>;
 }
 
-struct ProgramSource {
-    path: String,
-    args: Vec<String>
+pub struct ProgramSource {
+    command: Command
 }
 
 impl ProgramSource {
-    fn new(path: &String, args: &Vec<String>) -> Result<Self, Box<dyn Error>> {
-        Ok(Self {
-            path: path.clone(),
-            args: args.clone()
+    pub fn new(path: &String, args: &Vec<String>, ) -> Option<Self> {
+        let mut command = Command::new(path);
+
+        command.args(args);
+
+        Some(Self {
+            command
         })
     }
 }
 
 impl Source for ProgramSource {
-    fn get(&mut self) -> Result<i64, Box<dyn Error>> {
-        self.path = String::from("Test");
-        return Ok(1);
+    fn get(&mut self, timeout: Duration) -> Option<i64> {
+        match self.command.spawn() {
+            Ok(mut child) => {
+                sleep(timeout);
+
+                if let Ok(Some(status)) = child.try_wait() {
+                    if status.code().unwrap() == 0 {
+                        let mut result = String::new();
+
+                        child.stdout?.read_to_string(&mut result);
+
+                        return match result.parse::<i64>() {
+                            Ok(n) => Some(n),
+                            Err(_) => None
+                        }
+                    }
+
+                    None
+                } else {
+                    child.kill();
+                    None
+                }
+            }
+            Err(_) => return None
+        }
     }
 }
 
-struct FileSource {
+pub struct FileSource {
     file: fs::File,
 }
 
 impl FileSource {
-    fn new(path: &String) -> Result<Self, Box<dyn Error>> {
-        let file = fs::OpenOptions::new()
+    pub fn new(path: &String, timeout: Duration) -> Option<Self> {
+        let file = OpenOptions::new()
             .read(true)
-            .open(path)?;
+            .open(path);
 
-        Ok(Self {
-            file
-        })
+        match file {
+            Ok(file) => Some(Self{
+                file
+            }),
+            Err(_) => None
+        }
+    }
+}
+
+impl Source for FileSource {
+    fn get(&mut self, timeout: Duration) -> Option<i64> {
+        let mut buffer = String::new();
+
+        self.file.read_to_string(&mut buffer);
+
+        match buffer.parse::<i64>() {
+            Ok(n) => Some(n),
+            Err(_) => None
+        }
     }
 }
 
