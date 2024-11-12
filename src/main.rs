@@ -18,16 +18,17 @@ struct FileConfig {
 }
 
 fn main() {
-    let current_user = env::var("USER").unwrap();
-    let config_name = "kool.toml";
+    let args: Vec<String> = env::args().collect();
 
-    let path_to_config = "/home/".to_string() + &current_user + "/" + &config_name;
+    if args.len() < 1 {
+        println!("Path file missing");
+    }
+
+    let path_to_config = &args[1];
 
     println!("Loading config {path_to_config}");
-    //let tomls = fs::read_to_string(path_to_config).expect("Cannot read from file");
-    //
 
-    let tomls = fs::read_to_string("example.toml").expect("Cannot read from file");
+    let tomls = fs::read_to_string(path_to_config).expect("Cannot read from file");
 
     let config: FileConfig = toml::from_str(&tomls).expect("Cannot parse");
 

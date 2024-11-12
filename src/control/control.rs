@@ -98,7 +98,9 @@ impl Control {
     }
 
     pub fn control(&mut self) {
-        let src = self.source.get(Duration::from_millis(self.config.interval));
+        let interval = self.config.interval as f64 * 0.5;
+
+        let src = self.source.get(Duration::from_millis(interval as u64));
 
         if let Some(input) = src {
             let lower_idx = self.config.points.iter().position(|v| v[0] >= input);
