@@ -1,46 +1,67 @@
 use event::Event;
-use serde::{ Serialize, Deserialize };
-use std::cell::RefCell;
-use std::rc::Rc;
+use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::{env, path, thread};
 use std::{fs, io::Write, thread::sleep, time::Duration};
 
 mod async_pool;
-mod signal;
-mod event;
 mod control;
+mod event;
+mod signal;
 
 use control::control::Config;
+use control::control::Control;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 struct FileConfig {
-    control: Vec<Config>
+    control: Vec<Config>,
 }
 
 fn main() {
+    let current_user = env::var("USER").unwrap();
+    let config_name = "kool.toml";
+
+    let path_to_config = "/home/".to_string() + &current_user + "/" + &config_name;
+
+    println!("Loading config {path_to_config}");
+    //let tomls = fs::read_to_string(path_to_config).expect("Cannot read from file");
+    //
+
     let tomls = fs::read_to_string("example.toml").expect("Cannot read from file");
 
-    let parsed: FileConfig = toml::from_str(&tomls).expect("Cannot parse");
+    let config: FileConfig = toml::from_str(&tomls).expect("Cannot parse");
 
-    println!("{:#?}", parsed);
+    println!("{:#?}", config);
 
-    let mut input = String::new();
+    let mut async_pool = async_pool::AsyncPool::new(10, Duration::from_millis(1));
 
-    let mut async_pool= async_pool::AsyncPool::new(10, Duration::from_millis(1));
-    
-    async_pool.connect_listener(|e| {
-        match e.as_ref() {
-            Event::Log(str) => { println!("{}", str)}
-            Event::Warn(str) => { println!("{}", str)}
-            Event::Error(str) => { println!("{}", str)}
+    async_pool.connect_listener(|e| match e.as_ref() {
+        Event::Log(str) => {
+            println!("Log {}", str)
+        }
+        Event::Warn(str) => {
+            println!("Warn {}", str)
+        }
+        Event::Error(str) => {
+            println!("Error {}", str)
         }
     });
 
-    let async_pool = Rc::new(RefCell::new(async_pool));
+    let controls: Vec<Arc<Mutex<Control>>> = config
+        .control
+        .iter()
+        .map(|config| Control::new(config.clone()))
+        .filter(|control| if let Some(c) = control { true } else { false })
+        .map(|control| Arc::new(Mutex::new(control.unwrap())))
+        .collect();
 
+    for control in controls.iter() {
+        let interval = control.lock().unwrap().get_interval().clone();
+        let c = Arc::clone(control);
 
-    loop {
-        sleep(Duration::from_secs(1));
+        async_pool.attach_job(interval, move || {
+            c.lock().unwrap().control();
+        });
     }
+    async_pool.wait();
 }

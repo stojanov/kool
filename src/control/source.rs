@@ -1,22 +1,27 @@
-use std::{error::Error, fs::{self, OpenOptions}, io::{Read}, process::Command, thread::sleep, time::Duration};
+use std::{
+    fs::{self, OpenOptions},
+    io::Read,
+    process::{Command, Stdio},
+    thread::sleep,
+    time::Duration,
+};
 
 pub trait Source {
     fn get(&mut self, timeout: Duration) -> Option<i64>;
 }
 
 pub struct ProgramSource {
-    command: Command
+    command: Command,
 }
 
 impl ProgramSource {
-    pub fn new(path: &String, args: &Vec<String>, ) -> Option<Self> {
+    pub fn new(path: &String, args: &Vec<String>) -> Option<Self> {
         let mut command = Command::new(path);
 
         command.args(args);
+        command.stdout(Stdio::piped());
 
-        Some(Self {
-            command
-        })
+        Some(Self { command })
     }
 }
 
@@ -30,21 +35,21 @@ impl Source for ProgramSource {
                     if status.code().unwrap() == 0 {
                         let mut result = String::new();
 
-                        child.stdout?.read_to_string(&mut result);
+                        let _ = child.stdout.take()?.read_to_string(&mut result);
 
                         return match result.parse::<i64>() {
                             Ok(n) => Some(n),
-                            Err(_) => None
-                        }
+                            Err(_) => None,
+                        };
                     }
 
                     None
                 } else {
-                    child.kill();
+                    let _ = child.kill();
                     None
                 }
             }
-            Err(_) => return None
+            Err(_) => return None,
         }
     }
 }
@@ -54,16 +59,12 @@ pub struct FileSource {
 }
 
 impl FileSource {
-    pub fn new(path: &String, timeout: Duration) -> Option<Self> {
-        let file = OpenOptions::new()
-            .read(true)
-            .open(path);
+    pub fn new(path: &String) -> Option<Self> {
+        let file = OpenOptions::new().read(true).open(path);
 
         match file {
-            Ok(file) => Some(Self{
-                file
-            }),
-            Err(_) => None
+            Ok(file) => Some(Self { file }),
+            Err(_) => None,
         }
     }
 }
@@ -76,8 +77,7 @@ impl Source for FileSource {
 
         match buffer.parse::<i64>() {
             Ok(n) => Some(n),
-            Err(_) => None
+            Err(_) => None,
         }
     }
 }
-
