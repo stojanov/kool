@@ -1,27 +1,47 @@
-use event::Event;
+use notify_rust::Notification;
 use serde::{Deserialize, Serialize};
+use std::env;
+use std::process::exit;
 use std::sync::{Arc, Mutex};
-use std::{env, path, thread};
-use std::{fs, io::Write, thread::sleep, time::Duration};
+use std::{fs, time::Duration};
 
 mod async_pool;
 mod control;
+mod error;
 mod event;
 mod signal;
+mod source;
 
-use control::control::Config;
-use control::control::Control;
+use control::Config;
+use control::Control;
+use event::Event;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct MainConfig {
+    thread_count: Option<usize>,
+    timer_resolution: Option<u64>,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct FileConfig {
     control: Vec<Config>,
+    main: Option<MainConfig>,
+}
+
+fn spawn_notification(message: &str) {
+    let _ = Notification::new()
+        .summary("Kool Error")
+        .body(message)
+        .appname("kool")
+        .show();
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 1 {
-        println!("Path file missing");
+    if args.len() < 2 {
+        println!("Argument for config path file missing");
+        exit(1);
     }
 
     let path_to_config = &args[1];
@@ -34,35 +54,57 @@ fn main() {
 
     println!("{:#?}", config);
 
-    let mut async_pool = async_pool::AsyncPool::new(10, Duration::from_millis(1));
+    let mut thread_count = 10;
+    let mut timer_resolution = 1;
+
+    if let Some(main) = config.main {
+        if let Some(th) = main.thread_count {
+            thread_count = th;
+        }
+
+        if let Some(res) = main.timer_resolution {
+            timer_resolution = res;
+        }
+    }
+
+    let mut async_pool =
+        async_pool::AsyncPool::new(thread_count, Duration::from_millis(timer_resolution));
 
     async_pool.connect_listener(|e| match e.as_ref() {
         Event::Log(str) => {
-            println!("Log {}", str)
+            println!("Log: {}", str);
         }
         Event::Warn(str) => {
-            println!("Warn {}", str)
+            println!("Warn: {}", str);
         }
-        Event::Error(str) => {
-            println!("Error {}", str)
+        Event::Error(err) => {
+            println!("Error: {}", err.message());
+            spawn_notification(err.message().as_str());
+        }
+        Event::LogError(str) => {
+            println!("LogError: {}", str);
         }
     });
 
-    let controls: Vec<Arc<Mutex<Control>>> = config
-        .control
-        .iter()
-        .map(|config| Control::new(config.clone()))
-        .filter(|control| if let Some(c) = control { true } else { false })
-        .map(|control| Arc::new(Mutex::new(control.unwrap())))
-        .collect();
+    for control_config in config.control {
+        match Control::new(control_config) {
+            Ok(control) => {
+                let interval = control.get_interval().clone();
+                let control = Arc::new(Mutex::new(control));
 
-    for control in controls.iter() {
-        let interval = control.lock().unwrap().get_interval().clone();
-        let c = Arc::clone(control);
-
-        async_pool.attach_job(interval, move || {
-            c.lock().unwrap().control();
-        });
+                async_pool.attach_job(interval, move || {
+                    if let Err(e) = control.lock().unwrap().control() {
+                        Some(e)
+                    } else {
+                        None
+                    }
+                });
+            }
+            Err(err) => {
+                spawn_notification(err.message().as_str());
+            }
+        }
     }
+
     async_pool.wait();
 }

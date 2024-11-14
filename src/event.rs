@@ -1,6 +1,8 @@
+use crate::error;
 
 pub enum Event {
     Log(String),
-    Error(String),
-    Warn(String)
+    Warn(String),
+    Error(error::Error),
+    LogError(String),
 }

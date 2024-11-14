@@ -4,10 +4,11 @@ use std::sync::{atomic::AtomicBool, atomic::Ordering, Arc, Condvar, Mutex};
 use std::thread::{self, sleep};
 use std::time::{Duration, Instant};
 
+use crate::error;
 use crate::event;
 use crate::signal;
 
-type JobFunc = dyn Fn() + 'static + Send + Sync;
+type JobFunc = dyn Fn() -> Option<error::Error> + 'static + Send + Sync;
 type Job = Box<JobFunc>;
 
 struct PollingJob {
@@ -111,8 +112,12 @@ impl WaitableWorker {
 
                         job.last_t = Instant::now();
                         job.running.store(true, Ordering::SeqCst);
-                        (job.job)();
+                        let r = (job.job)();
                         job.running.store(false, Ordering::SeqCst);
+
+                        if let Some(e) = r {
+                            state.signal.lock().unwrap().notify(event::Event::Error(e));
+                        }
                     }
                     Message::Shutdown => {
                         break;
@@ -196,7 +201,7 @@ impl PollingWorker {
                             // if we get to here we would need to spawn another thread to handle this,
                             // increase our thread count
                             // time is of the essense here, need to be thought out how to be handled
-                            state.signal.lock().unwrap().notify(event::Event::Error(String::from("This is a big issue, there is no designated worker to take care of this task and possible other scenarios")));
+                            state.signal.lock().unwrap().notify(event::Event::LogError(String::from("This is a big issue, there is no designated worker to take care of this task and possible other scenarios")));
                         }
                     }
                 }
@@ -206,7 +211,7 @@ impl PollingWorker {
 
                 //println!("TIME PASSED FOR TICK {}", dt.as_millis());
                 if dt > resolution {
-                    state.signal.lock().unwrap().notify(event::Event::Error(String::from("Got dt biggen than the resolution this is an issue, posslby start another timer/job thread")));
+                    state.signal.lock().unwrap().notify(event::Event::LogError(String::from("Got dt biggen than the resolution this is an issue, posslby start another timer/job thread")));
                     panic!("DT BIGGER THAN RESOLUTION");
                 }
 
@@ -274,7 +279,7 @@ impl AsyncPool {
 
     pub fn submit<F>(&mut self, job: F)
     where
-        F: Fn() + 'static + Send + Sync,
+        F: Fn() -> Option<error::Error> + 'static + Send + Sync,
     {
         let (lock, cvar) = &self.async_state.queue;
         lock.lock()
@@ -285,7 +290,7 @@ impl AsyncPool {
 
     pub fn attach_job<F>(&mut self, timeout: Duration, job: F)
     where
-        F: Fn() + 'static + Send + Sync,
+        F: Fn() -> Option<error::Error> + 'static + Send + Sync,
     {
         let attached_result =
             self.polling_attached
