@@ -26,6 +26,7 @@ struct MainConfig {
 struct FileConfig {
     control: Vec<Config>,
     main: Option<MainConfig>,
+    // possibly add the option for dynamic threads
 }
 
 fn spawn_notification(message: &str) {
